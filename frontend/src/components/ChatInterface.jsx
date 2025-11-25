@@ -18,8 +18,8 @@ export default function ChatInterface({ websocketRef }) {
 
     useEffect(() => {
         // Connect to WebSocket
-        console.log('Attempting WebSocket connection to ws://127.0.0.1:8000/ws/chat');
-        ws.current = new WebSocket('ws://127.0.0.1:8000/ws/chat');
+        console.log('Attempting WebSocket connection to ws://healthcare-multi-agent.vercel.app/ws/chat');
+        ws.current = new WebSocket('ws://healthcare-multi-agent.vercel.app/ws/chat');
 
         ws.current.onopen = () => {
             console.log('WebSocket connected successfully!');

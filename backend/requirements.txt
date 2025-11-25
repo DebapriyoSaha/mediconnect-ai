@@ -5,7 +5,8 @@ langgraph
 langchain-groq
 pydantic
 python-dotenv
+python-multipart
 websockets
 langgraph-swarm
 sqlalchemy
-sqlitecloud
+sqlalchemy-sqlitecloud

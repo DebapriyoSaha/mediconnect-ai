@@ -26,7 +26,7 @@ async def startup_event():
     logger.info("BACKEND STARTED - Healthcare Agent Swarm")
     logger.info(f"Graph loaded: {graph is not None}")
     logger.info("="*50)
-    show_graph(graph, save_to_file='graph.png')
+    # show_graph(graph, save_to_file='graph.png')
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,6 +58,12 @@ else:
     print("⚠️ Frontend directory does not exist!")
     print("Please copy your built frontend to the 'static' directory")
 
+
+@app.get("/favicon.svg")
+async def favicon():
+    if (FRONTEND_DIR / "favicon.svg").exists():
+        return FileResponse(FRONTEND_DIR / "favicon.svg", media_type="image/svg+xml")
+    return {"error": "Favicon not found"}
 
 @app.get("/")
 async def root():
