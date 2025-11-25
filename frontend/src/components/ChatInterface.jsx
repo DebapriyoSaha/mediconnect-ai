@@ -7,103 +7,84 @@ function cn(...inputs) {
     return twMerge(clsx(inputs));
 }
 
-export default function ChatInterface({ websocketRef }) {
+export default function ChatInterface({ onAgentChange }) {
     const [messages, setMessages] = useState([
         { role: 'agent', content: 'Hello! I am the Triage Agent. How can I help you today?' }
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const ws = websocketRef || useRef(null);
     const messagesEndRef = useRef(null);
-
-    useEffect(() => {
-        // Connect to WebSocket
-        console.log('Attempting WebSocket connection to wss://healthcare-multi-agent.vercel.app/ws/chat');
-        ws.current = new WebSocket('wss://healthcare-multi-agent.vercel.app/ws/chat');
-
-        // console.log('Attempting WebSocket connection to ws://127.0.0.1:8000/ws/chat');
-        // ws.current = new WebSocket('ws://127.0.0.1:8000/ws/chat');
-
-        ws.current.onopen = () => {
-            console.log('WebSocket connected successfully!');
-        };
-
-        ws.current.onmessage = (event) => {
-            console.log('Received message:', event.data);
-            let message = event.data;
-
-            // Try to parse as JSON in case it's a structured response
-            try {
-                const parsed = JSON.parse(message);
-                console.log('Parsed JSON:', parsed);
-
-                // Skip agent event messages - these are for the graph visualization only
-                if (parsed.type === 'agent_event') {
-                    console.log('Skipping agent event message');
-                    return;
-                }
-
-                // If it's an array of content objects, extract the text
-                if (Array.isArray(parsed)) {
-                    message = parsed.map(item => item.text || '').join('');
-                    console.log('Extracted text from array:', message);
-                } else if (parsed.text) {
-                    message = parsed.text;
-                    console.log('Extracted text from object:', message);
-                }
-            } catch (e) {
-                // If not JSON, use the message as-is (it's already a string)
-                console.log('Message is plain text, not JSON');
-            }
-
-            console.log('Final message to display:', message);
-            setMessages(prev => {
-                return [...prev, { role: 'agent', content: message }];
-            });
-            setIsLoading(false);
-        };
-
-        ws.current.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            setIsLoading(false);
-        };
-
-        ws.current.onclose = () => {
-            console.log('WebSocket disconnected');
-        };
-
-        return () => {
-            if (ws.current) ws.current.close();
-        };
-    }, []);
+    const threadIdRef = useRef(null);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const sendMessage = (e) => {
+    const sendMessage = async (e) => {
         e.preventDefault();
-        console.log('Send button clicked, input value:', input);
-
-        if (!input.trim() || isLoading) {
-            console.log('Message not sent - input empty or loading:', { input, isLoading });
-            return;
-        }
+        if (!input.trim() || isLoading) return;
 
         const userMsg = { role: 'user', content: input };
-        console.log('Adding user message to UI:', userMsg);
         setMessages(prev => [...prev, userMsg]);
         setInput('');
         setIsLoading(true);
 
-        console.log('WebSocket readyState:', ws.current?.readyState);
-        console.log('WebSocket.OPEN constant:', WebSocket.OPEN);
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: userMsg.content,
+                    thread_id: threadIdRef.current
+                }),
+            });
 
-        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-            console.log('Sending message via WebSocket:', userMsg.content);
-            ws.current.send(JSON.stringify({ type: 'message', content: userMsg.content }));
-        } else {
-            console.error('WebSocket not connected, readyState:', ws.current?.readyState);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+
+                const lines = buffer.split('\n');
+                // Keep the last part in the buffer as it might be incomplete
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+
+                    try {
+                        const data = JSON.parse(line);
+
+                        if (data.type === 'thread_id') {
+                            threadIdRef.current = data.thread_id;
+                        } else if (data.type === 'agent_event') {
+                            if (onAgentChange) onAgentChange(data.agent);
+                        } else if (data.type === 'message') {
+                            setMessages(prev => [...prev, { role: 'agent', content: data.content }]);
+                        } else if (data.type === 'error') {
+                            console.error('Error from server:', data.content);
+                            setMessages(prev => [...prev, { role: 'agent', content: `Error: ${data.content}` }]);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing JSON chunk:', e);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+            setMessages(prev => [...prev, { role: 'agent', content: 'Sorry, I encountered an error. Please try again.' }]);
+        } finally {
             setIsLoading(false);
         }
     };

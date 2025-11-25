@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from graph.swarm import graph
@@ -12,6 +12,7 @@ import uuid
 from langchain_core.messages import HumanMessage
 import json
 import pkg_resources
+from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -127,6 +128,55 @@ async def get_graph():
         logger.error(f"Error in graph endpoint: {e}")
         return {"status": "error", "message": str(e)}
 
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: str | None = None
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    thread_id = request.thread_id or str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    async def event_generator():
+        # Yield thread_id first so client knows it
+        yield json.dumps({"type": "thread_id", "thread_id": thread_id}) + "\n"
+        
+        try:
+            async for event in graph.astream_events(
+                {"messages": [("user", request.message)]},
+                config=config,
+                version="v1"
+            ):
+                kind = event["event"]
+                
+                if kind == "on_chain_start":
+                    node_name = event["name"]
+                    if node_name in ["Triage", "Clinical", "Appointment", "Billing"]:
+                        print(f"TRANSITION: Switched to agent {node_name}", flush=True)
+                        yield json.dumps({
+                            "type": "agent_event",
+                            "agent": node_name
+                        }) + "\n"
+
+                elif kind == "on_tool_start":
+                    tool_name = event["name"]
+                    tool_input = event["data"].get("input")
+                    print(f"TOOL START: {tool_name}", flush=True)
+                    # Optional: yield tool events if frontend needs them
+
+            # After streaming, get the final state to send the full response
+            snapshot = graph.get_state(config)
+            if snapshot.values and "messages" in snapshot.values:
+                last_message = snapshot.values["messages"][-1]
+                if hasattr(last_message, "content"):
+                     yield json.dumps({"type": "message", "content": last_message.content}) + "\n"
+                     
+        except Exception as e:
+            logger.error(f"Error during graph execution: {e}", exc_info=True)
+            yield json.dumps({"type": "error", "content": str(e)}) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     print("="*80, flush=True)
@@ -152,10 +202,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 message = json.loads(data)
                 user_message = message.get("content", "")
                 
-                # Log incoming message
-                # with open("debug.log", "a") as f:
-                #     f.write(f"INCOMING: {user_message}\n")
-
                 print(f"WEBSOCKET: Starting graph execution...", flush=True)
                 
                 # Run the graph with streaming events
@@ -166,54 +212,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 ):
                     kind = event["event"]
                     
-                    if kind == "on_chat_model_stream":
-                        content = event["data"]["chunk"].content
-                        if content:
-                            # Send token to client (optional, if frontend supports it)
-                            # await websocket.send_text(json.dumps({
-                            #     "type": "token",
-                            #     "content": content
-                            # }))
-                            pass
-                            
-                    elif kind == "on_chain_start":
+                    if kind == "on_chain_start":
                         node_name = event["name"]
                         if node_name in ["Triage", "Clinical", "Appointment", "Billing"]:
                             print(f"TRANSITION: Switched to agent {node_name}", flush=True)
-                            with open("debug.log", "a") as f:
-                                f.write(f"TRANSITION: {node_name}\n")
                             await websocket.send_text(json.dumps({
                                 "type": "agent_event",
                                 "agent": node_name
                             }))
 
-                    elif kind == "on_tool_start":
-                        tool_name = event["name"]
-                        tool_input = event["data"].get("input")
-                        print(f"TOOL START: {tool_name} input: {tool_input}", flush=True)
-                        with open("debug.log", "a") as f:
-                            f.write(f"TOOL START: {tool_name} input: {tool_input}\n")
-                            
-                    elif kind == "on_tool_end":
-                        tool_name = event["name"]
-                        tool_output = event["data"].get("output")
-                        print(f"TOOL END: {tool_name} output: {tool_output}", flush=True)
-                        with open("debug.log", "a") as f:
-                            f.write(f"TOOL END: {tool_name} output: {tool_output}\n")
-
                     elif kind == "on_chain_end":
-                        # Check for agent state updates or final response
                         pass
-
+                    
                 # After streaming, get the final state to send the full response
-                # This is a bit redundant if we stream, but ensures compatibility with current frontend
                 snapshot = graph.get_state(config)
                 if snapshot.values and "messages" in snapshot.values:
                     last_message = snapshot.values["messages"][-1]
                     if hasattr(last_message, "content"):
                          await websocket.send_text(last_message.content)
-                         with open("debug.log", "a") as f:
-                            f.write(f"RESPONSE: {last_message.content}\n")
 
                 print("WEBSOCKET: Graph execution completed", flush=True)
                 

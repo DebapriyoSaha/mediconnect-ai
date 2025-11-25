@@ -4,19 +4,7 @@ import GraphVisualization from './components/GraphVisualization';
 import { Activity } from 'lucide-react';
 
 function App() {
-    const websocketRef = useRef(null);
-    const [websocket, setWebsocket] = useState(null);
-
-    // Update websocket state when ref changes
-    useEffect(() => {
-        const checkWebSocket = setInterval(() => {
-            if (websocketRef.current && websocketRef.current !== websocket) {
-                setWebsocket(websocketRef.current);
-            }
-        }, 500);
-
-        return () => clearInterval(checkWebSocket);
-    }, [websocket]);
+    const [activeAgent, setActiveAgent] = useState('Triage');
 
     return (
         <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
@@ -38,7 +26,7 @@ function App() {
                             <h2 className="text-lg font-semibold text-slate-800">Agent Graph</h2>
                         </div>
                         <div className="flex-1 min-h-0 relative">
-                            <GraphVisualization websocket={websocket} />
+                            <GraphVisualization activeAgent={activeAgent} />
                         </div>
                     </div>
 
@@ -48,7 +36,7 @@ function App() {
                             <h2 className="text-lg font-semibold text-slate-800">Chat</h2>
                         </div>
                         <div className="flex-1 min-h-0 overflow-y-auto">
-                            <ChatInterface websocketRef={websocketRef} />
+                            <ChatInterface onAgentChange={setActiveAgent} />
                         </div>
                     </div>
                 </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import ReactFlow, {
     Background,
     Controls,
@@ -31,17 +31,24 @@ const nodeTypes = {
     custom: CustomNode
 };
 
-const GraphVisualization = ({ websocket }) => {
+const GraphVisualization = ({ activeAgent }) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    const [activeAgent, setActiveAgent] = useState('Triage');
     const [previousAgent, setPreviousAgent] = useState(null);
+    const currentAgentRef = useRef(activeAgent);
+
+    useEffect(() => {
+        if (currentAgentRef.current !== activeAgent) {
+            console.log(`Transition: ${currentAgentRef.current} -> ${activeAgent}`);
+            setPreviousAgent(currentAgentRef.current);
+            currentAgentRef.current = activeAgent;
+        }
+    }, [activeAgent]);
 
     useEffect(() => {
         const fetchGraph = async () => {
             try {
-                const response = await fetch('https://healthcare-multi-agent.vercel.app/graph');
-                // const response = await fetch('http://127.0.0.1:8000/graph');
+                const response = await fetch('/graph');
                 const data = await response.json();
 
                 const positions = {
@@ -140,7 +147,7 @@ const GraphVisualization = ({ websocket }) => {
 
                 setNodes(graphNodes);
                 setEdges(graphEdges);
-                setActiveAgent(data.default_agent);
+                // setActiveAgent(data.default_agent); // Controlled by parent now
             } catch (error) {
                 console.error('Error fetching graph:', error);
             }
@@ -148,28 +155,6 @@ const GraphVisualization = ({ websocket }) => {
 
         fetchGraph();
     }, []);
-
-    useEffect(() => {
-        if (!websocket) return;
-
-        const handleMessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'agent_event' && data.agent) {
-                    setActiveAgent((prev) => {
-                        if (prev !== data.agent) {
-                            console.log(`Transition: ${prev} -> ${data.agent}`);
-                            setPreviousAgent(prev);
-                        }
-                        return data.agent;
-                    });
-                }
-            } catch (e) { }
-        };
-
-        websocket.addEventListener('message', handleMessage);
-        return () => websocket.removeEventListener('message', handleMessage);
-    }, [websocket]);
 
     // Update nodes and edges when activeAgent changes
     useEffect(() => {
