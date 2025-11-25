@@ -5,10 +5,10 @@ description = "Healthcare Agent Swarm Backend"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.117.1",
-    "langchain>=0.0.278",
+    "langchain>=0.3.0",
     "langgraph==1.0.3",
     "langgraph-swarm==0.0.15",
-    "langchain-groq>=1.1.0",
+    "langchain-groq>=0.2.0",
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "websockets>=12.0",

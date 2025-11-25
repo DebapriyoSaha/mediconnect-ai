@@ -3,6 +3,7 @@ uvicorn
 langchain
 langgraph
 langchain-groq
+langchain-core
 pydantic
 python-dotenv
 python-multipart
