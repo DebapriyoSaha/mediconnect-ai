@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+langchain
+langgraph
+langchain-groq
+pydantic
+python-dotenv
+websockets
+langgraph-swarm
+sqlalchemy
+sqlitecloud

@@ -1,0 +1,17 @@
+{
+    "dependencies": [
+        "fastapi",
+        "uvicorn",
+        "langchain",
+        "langgraph",
+        "langchain-groq",
+        "pydantic",
+        "python-dotenv",
+        "websockets",
+        "langgraph-swarm"
+    ],
+    "graphs": {
+        "agent_swarm": "./graph/swarm.py:graph"
+    },
+    "env": ".env"
+}
