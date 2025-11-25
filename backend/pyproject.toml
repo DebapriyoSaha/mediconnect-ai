@@ -2,7 +2,7 @@
 name = "healthcare-agent"
 version = "0.1.0"
 description = "Healthcare Agent Swarm Backend"
-requires-python = ">=3.12.6"
+requires-python = "=3.12.6"
 
 [build-system]
 requires = ["setuptools>=61.0"]
