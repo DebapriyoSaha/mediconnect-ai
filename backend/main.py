@@ -65,6 +65,11 @@ async def favicon():
         return FileResponse(FRONTEND_DIR / "favicon.svg", media_type="image/svg+xml")
     return {"error": "Favicon not found"}
 
+
+@app.get("/versions")
+def versions():
+    return {pkg.key: pkg.version for pkg in pkg_resources.working_set}
+
 @app.get("/")
 async def root():
     """
