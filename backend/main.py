@@ -12,6 +12,7 @@ from agents.utils import show_graph, print_graph_ascii
 import uuid
 from langchain_core.messages import HumanMessage
 import json
+import pkg_resources
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
