@@ -1,12 +1,12 @@
 fastapi
 uvicorn
 langchain
-langgraph==1.0.3
+langgraph
 langchain-groq
 pydantic
 python-dotenv
 python-multipart
 websockets
-langgraph-swarm==0.0.15
+langgraph-swarm
 sqlalchemy
 sqlalchemy-sqlitecloud
