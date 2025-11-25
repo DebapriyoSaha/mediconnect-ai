@@ -41,6 +41,7 @@ const GraphVisualization = ({ websocket }) => {
         const fetchGraph = async () => {
             try {
                 const response = await fetch('https://healthcare-multi-agent.vercel.app/graph');
+                // const response = await fetch('http://127.0.0.1:8000/graph');
                 const data = await response.json();
 
                 const positions = {

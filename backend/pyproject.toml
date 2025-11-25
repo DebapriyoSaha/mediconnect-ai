@@ -1,0 +1,22 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.122.0",
+    "langchain",
+    "langchain-groq",
+    "langchain-core",
+    "langgraph",
+    "langgraph-swarm>=0.0.15",
+    "pydantic>=2.12.4",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0.44",
+    "sqlalchemy-sqlitecloud>=0.1.2",
+    "uvicorn>=0.38.0",
+    "websockets>=15.0.1",
+    "setuptools>=80.9.0",
+]
