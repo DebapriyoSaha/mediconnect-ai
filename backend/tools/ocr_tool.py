@@ -2,27 +2,33 @@ import io
 import logging
 import os
 import time
+import base64
 import concurrent.futures
 from typing import List, Optional, Union
 from multiprocessing import cpu_count
 from langchain_core.tools import tool
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage
 
 # Try importing dependencies
 try:
     import fitz  # PyMuPDF
-    from rapidocr_onnxruntime import RapidOCR
 except ImportError as e:
     raise ImportError(
         f"Missing dependency: {e}\n"
-        "Install required packages: pip install PyMuPDF rapidocr-onnxruntime"
+        "Install required packages: pip install PyMuPDF"
     )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def encode_image(image_bytes: bytes) -> str:
+    """Encodes image bytes to base64 string."""
+    return base64.b64encode(image_bytes).decode('utf-8')
+
 class PDFOCRProcessor:
     """
-    PDF OCR processor that extracts text from PDF streams.
+    PDF Processor that converts pages to images and uses VLM for text extraction.
     """
     
     def __init__(
@@ -37,9 +43,9 @@ class PDFOCRProcessor:
         if not file_stream:
             raise ValueError("file_stream cannot be None or empty")
         
-        self.num_workers = num_workers or min(cpu_count() * 2, 16)
+        self.num_workers = num_workers or min(cpu_count() * 2, 8) # Reduced workers for API rate limits
         self.zoom_factor = max(1.0, min(zoom_factor, 3.0))
-        self.ocr_engine = RapidOCR()
+        self.llm = ChatGroq(model="meta-llama/llama-4-maverick-17b-128e-instruct", temperature=0)
         
         # Convert stream to bytes
         if isinstance(file_stream, io.BytesIO):
@@ -60,7 +66,7 @@ class PDFOCRProcessor:
     
     def _process_page(self, page_num: int) -> str:
         """
-        Process single page and return extracted text.
+        Process single page: Convert to image -> Send to VLM.
         """
         try:
             # Convert PDF page to image
@@ -71,18 +77,26 @@ class PDFOCRProcessor:
             img_bytes = pix.tobytes("png")
             doc.close()
             
-            # Perform OCR
-            ocr_result = self.ocr_engine(img_bytes)
+            # Encode image
+            base64_image = encode_image(img_bytes)
             
-            if ocr_result and len(ocr_result) > 0:
-                text_data = ocr_result[0] if isinstance(ocr_result, tuple) else []
-                text_parts = [str(item[1]) for item in text_data if len(item) >= 2]
-                return '\n'.join(text_parts)
-            
-            return ''
+            # Call VLM
+            message = HumanMessage(
+                content=[
+                    {"type": "text", "text": "Extract all text from this medical document image. Return ONLY the extracted text, no conversational filler."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}"
+                        },
+                    },
+                ]
+            )
+            response = self.llm.invoke([message])
+            return response.content
             
         except Exception as e:
-            logging.info(f"Error processing page {page_num}: {e}")
+            logging.error(f"Error processing page {page_num}: {e}")
             return ''
     
     def extract_text(self) -> str:
@@ -98,21 +112,33 @@ class PDFOCRProcessor:
             texts = list(executor.map(self._process_page, pages))
         
         elapsed = time.perf_counter() - start_time
-        logging.info(f"✓ Completed in {elapsed:.2f}s ({self.total_pages/elapsed:.2f} pages/sec)")
+        logging.info(f"✓ Completed in {elapsed:.2f}s")
         
         return '\n\n'.join(text for text in texts if text)
 
 def extract_text_from_image(file_path: str) -> str:
     """
-    Extracts text from an image file using RapidOCR directly.
+    Extracts text from an image file using VLM directly.
     """
     try:
-        ocr_engine = RapidOCR()
-        result, _ = ocr_engine(file_path)
-        print(result)
-        if result:
-            return "\n".join([line[1] for line in result])
-        return ""
+        with open(file_path, "rb") as image_file:
+            base64_image = encode_image(image_file.read())
+            
+        llm = ChatGroq(model="meta-llama/llama-4-maverick-17b-128e-instruct", temperature=0)
+        
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": "Extract all text from this medical document image. Return ONLY the extracted text, no conversational filler."},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}"
+                    },
+                },
+            ]
+        )
+        response = llm.invoke([message])
+        return response.content
     except Exception as e:
         raise RuntimeError(f"Image OCR failed: {e}")
 
@@ -130,6 +156,7 @@ def analyze_prescription(file_path: str):
         _, ext = os.path.splitext(file_path)
         ext = ext.lower()
 
+        text = ""
         if ext == '.pdf':
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
@@ -143,6 +170,10 @@ def analyze_prescription(file_path: str):
         if not text.strip():
             return "No text could be extracted. The file might be empty or blurry."
             
+        # Optional: Second pass for structuring (if needed, but VLM might do it well enough)
+        # For now, just return the extracted text as the prompt asks for "clean up" but VLM extraction is usually decent.
+        # We can add a structuring step if the raw extraction is messy.
+        
         return f"Extracted Text:\n{text}"
 
     except Exception as e:

@@ -118,7 +118,7 @@ clinical_agent = create_react_agent(
     - Analyze uploaded prescriptions or medical reports using analyze_prescription tool. LOOK for messages starting with "[System: User uploaded file at ...]" and extract the file path to pass to the tool.
     - IF you extract ANY medical information (medicines, diagnosis, advice) from the file, YOU MUST save it using `add_medical_record`.
       - If diagnosis is not explicit, infer it from medicines or use "Prescription Analysis".
-      - Use patient_id="1" (default) unless you know the specific ID.
+      - **CRITICAL**: You MUST extract the `patient_id` from the conversation history. Look for the output of `verify_user` or `register_user` which contains "ID: <number>". Use that number. DO NOT ASK the user for their ID if it has already been verified.
     - Offer reassurance and guidance
     
     IMPORTANT DISCLAIMERS:
