@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Loader2 } from 'lucide-react';
+import { Send, Bot, User, Loader2, Paperclip, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 function cn(...inputs) {
     return twMerge(clsx(inputs));
@@ -13,30 +15,70 @@ export default function ChatInterface({ onAgentChange }) {
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null);
     const messagesEndRef = useRef(null);
     const threadIdRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setSelectedFile(file);
+        }
+    };
+
+    const clearFile = () => {
+        setSelectedFile(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     const sendMessage = async (e) => {
         e.preventDefault();
-        if (!input.trim() || isLoading) return;
+        if ((!input.trim() && !selectedFile) || isLoading) return;
 
-        const userMsg = { role: 'user', content: input };
-        setMessages(prev => [...prev, userMsg]);
-        setInput('');
+        let messageContent = input;
+        let uploadedFilePath = null;
+
         setIsLoading(true);
 
         try {
+            // Upload file first if selected
+            if (selectedFile) {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                const uploadResponse = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error('File upload failed');
+                }
+
+                const uploadData = await uploadResponse.json();
+                uploadedFilePath = uploadData.file_path;
+                messageContent += `\n[System: User uploaded file at ${uploadedFilePath}]`;
+            }
+
+            const userMsg = { role: 'user', content: input || (selectedFile ? `Sent an image: ${selectedFile.name}` : '') };
+            setMessages(prev => [...prev, userMsg]);
+            setInput('');
+            clearFile();
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: userMsg.content,
+                    message: messageContent,
                     thread_id: threadIdRef.current
                 }),
             });
@@ -57,7 +99,6 @@ export default function ChatInterface({ onAgentChange }) {
                 buffer += chunk;
 
                 const lines = buffer.split('\n');
-                // Keep the last part in the buffer as it might be incomplete
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
@@ -101,18 +142,25 @@ export default function ChatInterface({ onAgentChange }) {
                         )}
                     >
                         <div className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                            msg.role === 'user' ? "bg-blue-600 text-white" : "bg-emerald-600 text-white"
-                        )}>
-                            {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                        </div>
-                        <div className={cn(
                             "p-3 rounded-2xl text-sm leading-relaxed",
                             msg.role === 'user'
                                 ? "bg-blue-600 text-white rounded-tr-none"
                                 : "bg-slate-100 text-slate-800 rounded-tl-none"
                         )}>
-                            {msg.content}
+                            <div className="prose prose-sm max-w-none break-words">
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                        p: ({ node, ...props }) => <p className="mb-1 last:mb-0" {...props} />,
+                                        ul: ({ node, ...props }) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                                        ol: ({ node, ...props }) => <ol className="list-decimal ml-4 mb-2" {...props} />,
+                                        li: ({ node, ...props }) => <li className="mb-0.5" {...props} />,
+                                        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                                    }}
+                                >
+                                    {msg.content}
+                                </ReactMarkdown>
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -130,7 +178,30 @@ export default function ChatInterface({ onAgentChange }) {
             </div>
 
             <form onSubmit={sendMessage} className="p-4 border-t border-slate-100 bg-slate-50">
+                {selectedFile && (
+                    <div className="flex items-center gap-2 mb-2 p-2 bg-slate-100 rounded-lg w-fit">
+                        <span className="text-xs text-slate-600 truncate max-w-[200px]">{selectedFile.name}</span>
+                        <button type="button" onClick={clearFile} className="text-slate-500 hover:text-red-500">
+                            <X size={14} />
+                        </button>
+                    </div>
+                )}
                 <div className="flex gap-2">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        accept="image/*"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-xl transition-colors"
+                        title="Upload Prescription"
+                    >
+                        <Paperclip size={20} />
+                    </button>
                     <input
                         type="text"
                         value={input}
@@ -140,13 +211,13 @@ export default function ChatInterface({ onAgentChange }) {
                     />
                     <button
                         type="submit"
-                        disabled={isLoading || !input.trim()}
+                        disabled={isLoading || (!input.trim() && !selectedFile)}
                         className="bg-blue-600 text-white p-2 rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         <Send size={20} />
                     </button>
                 </div>
             </form>
-        </div>
+        </div >
     );
 }

@@ -1,11 +1,12 @@
 import logging
+import shutil
+import tempfile
 from dotenv import load_dotenv
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.websockets import WebSocket, WebSocketDisconnect
 from graph.swarm import graph
 from agents.utils import show_graph, print_graph_ascii
 import uuid
@@ -20,6 +21,20 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = FastAPI(title="Healthcare Agent")
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        # Use tempfile to get a valid temporary directory (works on Vercel/Lambda)
+        suffix = Path(file.filename).suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = tmp.name
+            
+        return JSONResponse(content={"file_path": tmp_path, "url": f"/uploads/{file.filename}"})
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.on_event("startup")
 async def startup_event():

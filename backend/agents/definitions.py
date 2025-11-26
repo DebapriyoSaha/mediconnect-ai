@@ -1,7 +1,8 @@
 from langchain_groq import ChatGroq
-from tools.medical_tools import check_availability, book_appointment, get_patient_records, get_billing_info, cancel_appointment, search_doctors, verify_user, register_user
+from tools.medical_tools import check_availability, book_appointment, get_patient_records, get_billing_info, cancel_appointment, search_doctors, verify_user, register_user, add_medical_record
 from langgraph_swarm import create_handoff_tool
 from langgraph.prebuilt import create_react_agent
+from tools.ocr_tool import analyze_prescription
 import os
 from dotenv import load_dotenv
 
@@ -50,6 +51,7 @@ triage_agent = create_react_agent(
     - NEVER invent or guess email addresses.
     - NEVER invent or guess user details.
     - ALWAYS ask the user and WAIT for their input before using verification tools.
+    - IF the user uploads a file or image (indicated by "[System: User uploaded file at ...]"), IMMEDIATELY hand off to the Clinical Agent using `to_clinical`.
     """,
     name="Triage"
 )
@@ -79,6 +81,12 @@ appointment_agent = create_react_agent(
     If the patient asks about medical symptoms or health concerns, immediately hand off to the Clinical Agent using to_clinical tool.
     
     IMPORTANT: Respond directly to the patient's question. Do NOT announce that you received a handoff.
+    
+    CRITICAL RULES:
+    - You MUST use the `book_appointment` tool to perform the actual booking.
+    - NEVER say an appointment is booked unless you have successfully called the `book_appointment` tool and received a confirmation.
+    - If the user provides a partial name (e.g. "Davi"), use `search_doctors` to find the correct ID or full name before booking.
+    - Do not hallucinate successful bookings.
     """,
     name="Appointment"
 )
@@ -87,6 +95,10 @@ appointment_agent = create_react_agent(
 clinical_tools = [
     get_patient_records,
     search_doctors,
+    get_patient_records,
+    search_doctors,
+    analyze_prescription,
+    add_medical_record,
     to_triage,
     to_appointment,
     to_billing
@@ -100,6 +112,13 @@ clinical_agent = create_react_agent(
     - Provide general medical advice and information about symptoms
     - Access patient records if needed using get_patient_records tool
     - Recommend specialists using search_doctors tool if needed
+    - Provide general medical advice and information about symptoms
+    - Access patient records if needed using get_patient_records tool
+    - Recommend specialists using search_doctors tool if needed
+    - Analyze uploaded prescriptions or medical reports using analyze_prescription tool. LOOK for messages starting with "[System: User uploaded file at ...]" and extract the file path to pass to the tool.
+    - IF you extract ANY medical information (medicines, diagnosis, advice) from the file, YOU MUST save it using `add_medical_record`.
+      - If diagnosis is not explicit, infer it from medicines or use "Prescription Analysis".
+      - Use patient_id="1" (default) unless you know the specific ID.
     - Offer reassurance and guidance
     
     IMPORTANT DISCLAIMERS:
