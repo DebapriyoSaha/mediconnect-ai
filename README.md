@@ -111,7 +111,7 @@ Follow these steps to get your local healthcare swarm running in minutes.
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/healthcare-agent-swarm.git
+git clone https://github.com/DebapriyoSaha/mediconnect-ai.git
 cd healthcare-agent-swarm
 ```
 

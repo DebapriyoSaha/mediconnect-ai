@@ -7,13 +7,13 @@ export default defineConfig({
     server: {
         proxy: {
             '/api': {
-                target: 'http://127.0.0.1:8000',
-                // target : 'https://healthcare-multi-agent.vercel.app/',
+                // target: 'http://127.0.0.1:8000',
+                target : 'https://mediconnect-ai.vercel.app/',
                 changeOrigin: true,
             },
             '/graph': {
-                target: 'http://127.0.0.1:8000',
-                // target: 'https://healthcare-multi-agent.vercel.app/',
+                // target: 'http://127.0.0.1:8000',
+                target: 'https://mediconnect-ai.vercel.app/',
                 changeOrigin: true,
             }
         }
