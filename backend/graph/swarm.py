@@ -1,6 +1,7 @@
-from langgraph_swarm import create_swarm
-from agents.definitions import agents
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph_swarm import create_swarm
+
+from agents.definitions import agents
 
 checkpointer = InMemorySaver()
 

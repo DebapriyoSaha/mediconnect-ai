@@ -1,19 +1,37 @@
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime
-from dotenv import load_dotenv
-import sqlitecloud # Import to register the dialect
 import os
+from datetime import datetime
 
+from dotenv import load_dotenv
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
+                        String, create_engine)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
+
+# Load environment variables from .env
 load_dotenv()
 
-api_key = os.getenv("SQLITE_CLOUD_API_KEY")
-SQLALCHEMY_DATABASE_URL = f"sqlitecloud://catpee6mvk.g2.sqlite.cloud:8860/healthcare.db?apikey={api_key}"
+# Fetch variables
+USER = os.getenv("user")
+PASSWORD = os.getenv("password")
+HOST = os.getenv("host")
+PORT = os.getenv("port")
+DBNAME = os.getenv("dbname")
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL
-)
+# Construct the SQLAlchemy connection string
+DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+
+# Create the SQLAlchemy engine
+engine = create_engine(DATABASE_URL)
+# If using Transaction Pooler or Session Pooler, we want to ensure we disable SQLAlchemy client side pooling -
+# https://docs.sqlalchemy.org/en/20/core/pooling.html#switching-pool-implementations
+# engine = create_engine(DATABASE_URL, poolclass=NullPool)
+
+# Test the connection
+try:
+    with engine.connect() as connection:
+        print("Connection successful!")
+except Exception as e:
+    print(f"Failed to connect: {e}")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -25,6 +43,11 @@ class Doctor(Base):
     name = Column(String, index=True)
     specialty = Column(String, index=True)
     bio = Column(String)
+    clinic_name = Column(String, index=True)
+    address = Column(String)
+    city = Column(String, index=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     
     appointments = relationship("Appointment", back_populates="doctor")
     availabilities = relationship("Availability", back_populates="doctor")

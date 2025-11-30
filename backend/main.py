@@ -1,26 +1,33 @@
+import io
+import json
 import logging
 import shutil
 import tempfile
-from dotenv import load_dotenv
-from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from graph.swarm import graph
-from agents.utils import show_graph, print_graph_ascii
 import uuid
+from pathlib import Path
+
+from dotenv import load_dotenv
+from fastapi import (FastAPI, File, HTTPException, Request, UploadFile,
+                     WebSocket, WebSocketDisconnect)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               StreamingResponse)
+from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import HumanMessage
-import json
-import pkg_resources
 from pydantic import BaseModel
+
+from agents.utils import print_graph_ascii, show_graph
+from database import Appointment, Doctor, Patient, get_db
+from graph.swarm import graph
+from tools.calendar_tool import generate_ics_bytes
+from tools.ticket_tool import generate_ticket_bytes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = FastAPI(title="Healthcare Agent")
+app = FastAPI(title="MediConnect AI - Healthcare Agent Swarm")
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -35,6 +42,76 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/api/calendar/{appointment_id}")
+async def get_calendar(appointment_id: int):
+    """
+    Generates and returns the iCal (.ics) file on-the-fly.
+    """
+    db = next(get_db())
+    try:
+        appt = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+        if not appt:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+            
+        doctor = db.query(Doctor).filter(Doctor.id == appt.doctor_id).first()
+        patient = db.query(Patient).filter(Patient.id == appt.patient_id).first()
+        
+        details = {
+            "appointment_id": appt.id,
+            "patient_name": patient.name if patient else "Unknown",
+            "doctor_name": doctor.name if doctor else "Unknown",
+            "date": appt.date,
+            "time": appt.time
+        }
+        
+        ics_bytes = generate_ics_bytes(details)
+        if not ics_bytes:
+            raise HTTPException(status_code=500, detail="Failed to generate calendar file")
+            
+        return StreamingResponse(
+            io.BytesIO(ics_bytes), 
+            media_type="text/calendar",
+            headers={"Content-Disposition": f"attachment; filename=reminder_{appointment_id}.ics"}
+        )
+    finally:
+        db.close()
+
+@app.get("/api/tickets/{appointment_id}")
+async def get_ticket(appointment_id: int):
+    """
+    Generates and returns the appointment ticket PDF on-the-fly.
+    """
+    db = next(get_db())
+    try:
+        appt = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+        if not appt:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+            
+        doctor = db.query(Doctor).filter(Doctor.id == appt.doctor_id).first()
+        patient = db.query(Patient).filter(Patient.id == appt.patient_id).first()
+        
+        details = {
+            "appointment_id": appt.id,
+            "patient_name": patient.name if patient else "Unknown",
+            "doctor_name": doctor.name if doctor else "Unknown",
+            "date": appt.date,
+            "time": appt.time
+        }
+        
+        pdf_bytes = generate_ticket_bytes(details)
+        if not pdf_bytes:
+            raise HTTPException(status_code=500, detail="Failed to generate ticket")
+            
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes), 
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=ticket_{appointment_id}.pdf"}
+        )
+    finally:
+        db.close()
 
 @app.on_event("startup")
 async def startup_event():
@@ -81,10 +158,6 @@ async def favicon():
         return FileResponse(FRONTEND_DIR / "favicon.svg", media_type="image/svg+xml")
     return {"error": "Favicon not found"}
 
-
-@app.get("/versions")
-def versions():
-    return {pkg.key: pkg.version for pkg in pkg_resources.working_set}
 
 @app.get("/")
 async def root():
@@ -146,12 +219,29 @@ async def get_graph():
 class ChatRequest(BaseModel):
     message: str
     thread_id: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     thread_id = request.thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     
+    # Prepare input with location context if available
+    input_data = {"messages": [("user", request.message)]}
+    if request.latitude and request.longitude:
+        # We can inject location into the message or state. 
+        # For simplicity, let's append it to the message content for the LLM to see directly,
+        # OR better, pass it as a separate state key if the graph supports it.
+        # Given the current graph structure, appending to message is safest/easiest 
+        # without changing state schema everywhere.
+        # But wait, the frontend ALREADY appends it to the message string!
+        # "System: User Location - Lat: ..."
+        # So we actually don't need to do anything extra here if the frontend does it.
+        # However, passing it explicitly allows tools to use it directly if we parse it.
+        # Let's just rely on the frontend message string for now as it's already implemented there.
+        pass
+
     async def event_generator():
         # Yield thread_id first so client knows it
         yield json.dumps({"type": "thread_id", "thread_id": thread_id}) + "\n"
@@ -179,12 +269,19 @@ async def chat_endpoint(request: ChatRequest):
                     print(f"TOOL START: {tool_name}", flush=True)
                     # Optional: yield tool events if frontend needs them
 
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if chunk.content:
+                        yield json.dumps({"type": "token", "content": chunk.content}) + "\n"
+
             # After streaming, get the final state to send the full response
-            snapshot = graph.get_state(config)
-            if snapshot.values and "messages" in snapshot.values:
-                last_message = snapshot.values["messages"][-1]
-                if hasattr(last_message, "content"):
-                     yield json.dumps({"type": "message", "content": last_message.content}) + "\n"
+            # We still send the final message event to ensure consistency or close the stream properly
+            # But the frontend should rely on tokens for the main display.
+            # Actually, if we stream tokens, we don't strictly need the final message, 
+            # but it's good for "done" state if needed.
+            # For now, let's keep it but maybe the frontend ignores it if it built the message from tokens?
+            # Or we just rely on tokens.
+            pass
                      
         except Exception as e:
             logger.error(f"Error during graph execution: {e}", exc_info=True)

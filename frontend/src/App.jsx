@@ -13,8 +13,8 @@ function App() {
                     <Activity className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                    <h1 className="text-xl font-bold text-slate-900">Healthcare Agent</h1>
-                    <p className="text-sm text-slate-500">Intelligent Multi-Agent Support</p>
+                    <h1 className="text-xl font-bold text-slate-900">MediConnect AI</h1>
+                    <p className="text-sm text-slate-500">Intelligent Healthcare Agent Swarm</p>
                 </div>
             </header>
 
