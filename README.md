@@ -45,7 +45,7 @@ The system is orchestrated using **LangGraph**, creating a directed cyclic graph
 
 ```mermaid
 graph TD
-    User((User)) <--> |WebSocket| API[FastAPI Gateway]
+    User((User)) <--> |HTTP/REST| API[FastAPI Gateway]
     API <--> Swarm[LangGraph Swarm]
     
     subgraph "Agent Swarm"

@@ -289,69 +289,69 @@ async def chat_endpoint(request: ChatRequest):
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
-@app.websocket("/ws/chat")
-async def websocket_endpoint(websocket: WebSocket):
-    print("="*80, flush=True)
-    print("WEBSOCKET: New connection attempt", flush=True)
-    print("="*80, flush=True)
+# @app.websocket("/ws/chat")
+# async def websocket_endpoint(websocket: WebSocket):
+#     print("="*80, flush=True)
+#     print("WEBSOCKET: New connection attempt", flush=True)
+#     print("="*80, flush=True)
     
-    await websocket.accept()
-    print("WEBSOCKET: Connection accepted!", flush=True)
+#     await websocket.accept()
+#     print("WEBSOCKET: Connection accepted!", flush=True)
 
-    thread_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
-    print(f"WEBSOCKET: Session created with thread_id: {thread_id}", flush=True)
+#     thread_id = str(uuid.uuid4())
+#     config = {"configurable": {"thread_id": thread_id}}
+#     print(f"WEBSOCKET: Session created with thread_id: {thread_id}", flush=True)
 
-    try:
-        while True:
-            # Receive message from client
-            data = await websocket.receive_text()
-            print("="*80, flush=True)
-            print(f"WEBSOCKET: Received message: '{data}'", flush=True)
-            print("="*80, flush=True)
+#     try:
+#         while True:
+#             # Receive message from client
+#             data = await websocket.receive_text()
+#             print("="*80, flush=True)
+#             print(f"WEBSOCKET: Received message: '{data}'", flush=True)
+#             print("="*80, flush=True)
             
-            try:
-                message = json.loads(data)
-                user_message = message.get("content", "")
+#             try:
+#                 message = json.loads(data)
+#                 user_message = message.get("content", "")
                 
-                print(f"WEBSOCKET: Starting graph execution...", flush=True)
+#                 print(f"WEBSOCKET: Starting graph execution...", flush=True)
                 
-                # Run the graph with streaming events
-                async for event in graph.astream_events(
-                    {"messages": [("user", user_message)]},
-                    config=config,
-                    version="v1"
-                ):
-                    kind = event["event"]
+#                 # Run the graph with streaming events
+#                 async for event in graph.astream_events(
+#                     {"messages": [("user", user_message)]},
+#                     config=config,
+#                     version="v1"
+#                 ):
+#                     kind = event["event"]
                     
-                    if kind == "on_chain_start":
-                        node_name = event["name"]
-                        if node_name in ["Triage", "Clinical", "Appointment", "Billing"]:
-                            print(f"TRANSITION: Switched to agent {node_name}", flush=True)
-                            await websocket.send_text(json.dumps({
-                                "type": "agent_event",
-                                "agent": node_name
-                            }))
+#                     if kind == "on_chain_start":
+#                         node_name = event["name"]
+#                         if node_name in ["Triage", "Clinical", "Appointment", "Billing"]:
+#                             print(f"TRANSITION: Switched to agent {node_name}", flush=True)
+#                             await websocket.send_text(json.dumps({
+#                                 "type": "agent_event",
+#                                 "agent": node_name
+#                             }))
 
-                    elif kind == "on_chain_end":
-                        pass
+#                     elif kind == "on_chain_end":
+#                         pass
                     
-                # After streaming, get the final state to send the full response
-                snapshot = graph.get_state(config)
-                if snapshot.values and "messages" in snapshot.values:
-                    last_message = snapshot.values["messages"][-1]
-                    if hasattr(last_message, "content"):
-                         await websocket.send_text(last_message.content)
+#                 # After streaming, get the final state to send the full response
+#                 snapshot = graph.get_state(config)
+#                 if snapshot.values and "messages" in snapshot.values:
+#                     last_message = snapshot.values["messages"][-1]
+#                     if hasattr(last_message, "content"):
+#                          await websocket.send_text(last_message.content)
 
-                print("WEBSOCKET: Graph execution completed", flush=True)
+#                 print("WEBSOCKET: Graph execution completed", flush=True)
                 
-            except Exception as e:
-                print(f"WEBSOCKET ERROR during graph execution: {e}", flush=True)
-                logger.error(f"Error during graph execution: {e}", exc_info=True)
-                await websocket.send_text(f"Error: {str(e)}")
+#             except Exception as e:
+#                 print(f"WEBSOCKET ERROR during graph execution: {e}", flush=True)
+#                 logger.error(f"Error during graph execution: {e}", exc_info=True)
+#                 await websocket.send_text(f"Error: {str(e)}")
 
-    except WebSocketDisconnect:
-        print("WEBSOCKET: Client disconnected", flush=True)
-    except Exception as e:
-        print(f"WEBSOCKET ERROR: {e}", flush=True)
-        logger.error(f"WebSocket error: {e}", exc_info=True)
+#     except WebSocketDisconnect:
+#         print("WEBSOCKET: Client disconnected", flush=True)
+#     except Exception as e:
+#         print(f"WEBSOCKET ERROR: {e}", flush=True)
+#         logger.error(f"WebSocket error: {e}", exc_info=True)
